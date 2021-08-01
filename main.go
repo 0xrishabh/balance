@@ -7,6 +7,9 @@ import (
 	"net/http"
 	"net/url"
 	"net/http/httputil"
+	"net"
+	"time"
+	"github.com/0xrishabh/balance/src/config"
 )
 
 func checkerr(err error)  {
@@ -24,27 +27,44 @@ type Backend struct {
 
 type ServerPool struct {
 	Backends []*Backend
+	Working []*Backend
 	Current uint64
+}
+
+func (backend *Backend) Health() bool {
+	timeout := 2 * time.Second
+	conn, err := net.DialTimeout("tcp", backend.Url.Host, timeout)
+
+	if err != nil {
+		log.Println("Site unreachable, error: ", err)
+		return false
+	}
+	
+	defer conn.Close()
+	return true
+}
+
+func (sp *ServerPool) Monitor() {
+	var status []bool
+	for _,backend := range sp.Backends{
+		backend.Online = backend.Health()
+		status = append(status, backend.Online)
+	}
+	fmt.Println(status)
 }
 
 func (sp *ServerPool) Add(u string){
 
-		var backend Backend
 		Url,err := url.Parse(u)
 		checkerr(err)
 
 		ReverseProxy := httputil.NewSingleHostReverseProxy(Url)
-		
-		backend.Url = Url
-		backend.Online = true
-		backend.ReverseProxy = ReverseProxy
-		sp.Backends = append(sp.Backends, &backend)
+		sp.Backends = append(sp.Backends, &Backend{Url, true, ReverseProxy, 0})
 }
 func (sp *ServerPool) Get() *httputil.ReverseProxy{
-	index := int(atomic.AddUint64(&sp.Current, uint64(1)) % uint64(len(sp.Backends)))
-	sp.Backends[index].Total += 1
-	fmt.Println(sp.Backends[0].Total,sp.Backends[1].Total,sp.Backends[2].Total,sp.Backends[3].Total,sp.Backends[4].Total)
-	return sp.Backends[index].ReverseProxy
+	index := int(atomic.AddUint64(&sp.Current, uint64(1)) % uint64(len(sp.Working)))
+	sp.Working[index].Total += 1
+	return sp.Working[index].ReverseProxy
 }	
 
 var peers ServerPool
@@ -54,6 +74,7 @@ func LoadBalancing(w http.ResponseWriter, r *http.Request){
 	peers.Get().ServeHTTP(w,r)
 
 }
+
 func main(){
 	
 	peers.Add("http://0.0.0.0:50001")
@@ -61,7 +82,16 @@ func main(){
 	peers.Add("http://0.0.0.0:50003")
 	peers.Add("http://0.0.0.0:50004")
 	peers.Add("http://0.0.0.0:50005")
-	
+	peers.Add("http://0.0.0.0:5000")
+	fmt.Println(configuration.Load("/tmp/config.yml"))
+
+	go func(){
+		for{
+			peers.Monitor()
+			time.Sleep(5 * time.Second)
+		}
+	}()
 	http.ListenAndServe(":8080", http.HandlerFunc(LoadBalancing))
 
 }
+
