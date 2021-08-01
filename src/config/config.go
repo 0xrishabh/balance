@@ -32,5 +32,5 @@ func Load(filename string) Config{
 	stream := read(filename)
 	yaml.Unmarshal(stream, &config)
 
-	return Config
+	return config
 }
