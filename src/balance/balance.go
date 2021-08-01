@@ -14,6 +14,13 @@ package balance
 		}
 */
 
+import (
+	"sync/atomic"
+	"net/http"
+	"net/url"
+	"net/http/httputil"
+	"net"
+)
 type Server struct {
 	Url *url.URL
 	Online bool
