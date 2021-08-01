@@ -10,6 +10,7 @@ import (
 	"net"
 	"time"
 	"github.com/0xrishabh/balance/src/config"
+	"github.com/0xrishabh/balance/src/balance"
 )
 
 func checkerr(err error)  {
@@ -34,8 +35,8 @@ type ServerPool struct {
 func (backend *Backend) Health() bool {
 	timeout := 2 * time.Second
 	conn, err := net.DialTimeout("tcp", backend.Url.Host, timeout)
-
 	if err != nil {
+
 		log.Println("Site unreachable, error: ", err)
 		return false
 	}
@@ -46,10 +47,12 @@ func (backend *Backend) Health() bool {
 
 func (sp *ServerPool) Monitor() {
 	var status []bool
+  
 	for _,backend := range sp.Backends{
 		backend.Online = backend.Health()
 		status = append(status, backend.Online)
 	}
+
 	fmt.Println(status)
 }
 
@@ -61,6 +64,7 @@ func (sp *ServerPool) Add(u string){
 		ReverseProxy := httputil.NewSingleHostReverseProxy(Url)
 		sp.Backends = append(sp.Backends, &Backend{Url, true, ReverseProxy, 0})
 }
+
 func (sp *ServerPool) Get() *httputil.ReverseProxy{
 	index := int(atomic.AddUint64(&sp.Current, uint64(1)) % uint64(len(sp.Working)))
 	sp.Working[index].Total += 1
@@ -83,15 +87,17 @@ func main(){
 	peers.Add("http://0.0.0.0:50004")
 	peers.Add("http://0.0.0.0:50005")
 	peers.Add("http://0.0.0.0:5000")
-	fmt.Println(configuration.Load("/tmp/config.yml"))
-
+	
+	config = configuration.Load("/tmp/config.yml")
+	LoadBalancerHandler := balance.Run(config)
+	
 	go func(){
 		for{
 			peers.Monitor()
 			time.Sleep(5 * time.Second)
 		}
 	}()
-	http.ListenAndServe(":8080", http.HandlerFunc(LoadBalancing))
+	http.ListenAndServe(":8080", http.HandlerFunc(LoadBalancerHandler))
 
 }
 
